@@ -3,6 +3,14 @@ from nltk.corpus import indian
 import numpy as np
 import random
 from typing import List
+import ssl
+
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
 
 nltk.download('indian')
 
@@ -70,10 +78,14 @@ class HMM:
         """
         for s_ids, o_ids in zip(state_ids, observation_ids):
             # count initial states
+            self.pi[s_ids[0]] += 1
             # count state->state transitions
+            for s1, s2 in zip(s_ids, s_ids[1:]):
+                self.A[s1][s2]+=1
             # count state->observations emissions
+            for s1, o in zip(s_ids, o_ids):
+                self.B[s1][o]+=1
             # HINT: use zip for creating bi-grams
-            raise NotImplementedError
 
         # normalize the rows of each probability matrix
         self.pi = np.log(self.pi / np.sum(self.pi))
@@ -115,8 +127,27 @@ class HMM:
             viterbi = np.zeros((self.n, T))  # The viterbi table
             back_pointer = np.zeros((self.n, T))   # backpointers for each state+sequence id
             # TODO: Fill the viterbi table, back_pointer. Get the optimal sequence by backtracking
-            ...
-            raise NotImplementedError
+
+            # Initialization step
+            viterbi[:, 0] = self.pi + self.B[:, obs_ids[0]]
+
+            for t in range(1, T):
+                for s in range(self.n):
+                    prev_state_scores = viterbi[:, t - 1] + self.A[:, s]  # Transition scores
+                    best_prev_state = np.argmax(prev_state_scores)  # Find the best previous state
+                    viterbi[s, t] = prev_state_scores[best_prev_state] + self.B[s, obs_ids[t]]
+                    back_pointer[s, t] = best_prev_state
+
+            best_last_state = np.argmax(viterbi[:, T - 1])
+            best_path = [best_last_state]
+
+            for t in range(T - 1, 0, -1):
+                # print(best_last_state)
+                best_last_state = back_pointer[int(best_last_state), t]
+                best_path.insert(0, best_last_state)
+
+            all_predictions.append(best_path)
+            
         return all_predictions
 
 

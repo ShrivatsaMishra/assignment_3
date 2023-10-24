@@ -1,7 +1,9 @@
 from typing import Dict, List, Set, Tuple
 
 import torch
-from torchcrf import CRF as CRFDecoder
+from pytorchcrf import CRF as CRFDecoder1
+
+
 from tqdm import tqdm
 import random
 
@@ -81,7 +83,8 @@ class NERTagger(torch.nn.Module):
         # Initialize the CRF using pytorch-crf. This adds the structured prediction function 
         # on top of our scorer. Note that the scorer works essentially like a logistic regression classifier
         # But we add the CRF on top.
-        self.crf_decoder = CRFDecoder(self.num_tags, batch_first=True)
+        self.crf_decoder = CRFDecoder1(self.num_tags, batch_first=True)
+        
 
     def forward(
         self, input_seq: torch.Tensor, tags: torch.Tensor, mask: torch.Tensor
@@ -103,12 +106,14 @@ class NERTagger(torch.nn.Module):
         emissions = self.make_emissions(input_seq)
         # Compute the log likelihood of the gold tags 
         # given the input. We get y_i and y_{i-1} from the gold tags.
-        return self.crf_decoder(emissions, tags, mask=mask, reduction="mean")
+        return self.crf_decoder(emissions, tags, mask=mask)
 
-    def decode(self, input_seq: torch.Tensor) -> List[int]:
+    def decode(self, input_seq: torch.Tensor, mask) -> List[int]:
         emissions = self.make_emissions(input_seq)
         # Decode the argmax sequence of labels with viterbi
+        # print(type(self.crf_decoder))
         return self.crf_decoder.decode(emissions)
+        
 
     def make_emissions(self, input_seq: torch.Tensor) -> torch.Tensor:
         """Compute a probability distribution over the tags for each
@@ -139,7 +144,12 @@ def precision(
     TP = torch.tensor([0])
     denom = torch.tensor([0])
     for pred, true in zip(predicted_labels, true_labels):
-        TP += sum((pred == true)[pred != outside_tag_idx])
+        # print(pred)
+        # print(true)
+        # print(pred==true)
+        # print(outside_tag_idx)
+        # print((pred!=outside_tag_idx).view(1, -1))
+        TP += sum((pred == true)[(pred != outside_tag_idx).view(1, -1)])
         denom += sum(pred != outside_tag_idx)
 
     # Avoid division by 0
@@ -158,8 +168,12 @@ def recall(
     TP = torch.tensor([0])
     denom = torch.tensor([0])
     for pred, true in zip(predicted_labels, true_labels):
-        TP += sum((pred == true)[true != outside_tag_idx])
-        denom += sum(true != outside_tag_idx)
+        # print(pred)
+        # print(true)
+        # print((pred==true).unsqueeze(0))
+        TP += sum((pred == true)[(true != outside_tag_idx).view(1, -1)])
+        # print((true != outside_tag_idx).view(-1))
+        denom += sum((true != outside_tag_idx).view(-1))
 
     # Avoid division by 0
     denom = torch.tensor(1) if denom == 0 else denom
@@ -202,7 +216,7 @@ def encode_token_features(features: List[str], features_dict: Dict[str, int]) ->
     ])
 
 
-def predict(model: torch.nn.Module, feature_sents: List[List[int]]) -> List[torch.Tensor]:
+def predict(model: torch.nn.Module, feature_sents: List[List[int]], mask) -> List[torch.Tensor]:
     """Make predictions with the input model. Return a List of tensors.
 
     Args:
@@ -217,7 +231,7 @@ def predict(model: torch.nn.Module, feature_sents: List[List[int]]) -> List[torc
         # Dummy batch dimension
         features = features.unsqueeze(0)
         # -> List[List[int]]
-        preds = model.decode(features)
+        preds = model.decode(features, mask)
         preds = [torch.tensor(p) for p in preds]
         out.extend(preds)
 
